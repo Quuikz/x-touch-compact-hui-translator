@@ -1,5 +1,39 @@
 # x-touch-compact-hui-translator
-Simple Python-based translator for Behringer X-touch which doesn't have HUI
+
+Python MIDI translator for using a Behringer X-Touch Compact as a basic HUI
+surface in Pro Tools.
+
+## Requirements
+
+- macOS with the X-Touch Compact connected by USB
+- X-Touch Compact set to MC (Mackie Control) mode
+- Python 3
+- `mido` and `python-rtmidi`
+
+Install the Python dependencies with:
+
+```bash
+python3 -m pip install mido python-rtmidi
+```
+
+## Setup
+
+Run the translator:
+
+```bash
+python3 hui_server.py
+```
+
+In Pro Tools, configure the HUI control surface to use the virtual MIDI ports
+named `Python HUI`. Select the port exposed as the Pro Tools input for MIDI
+output from the translator, and the corresponding output for MIDI input to the
+translator.
+
+The translator currently supports the eight motorized faders, fader touch,
+transport controls, bank left/right, and the first eight track V-Pots. The
+remaining encoders are passed through as ordinary MIDI CC messages for manual
+mapping. Channel mute, solo, record-arm, display, and other HUI feedback are
+not yet translated to the X-Touch.
 
 ## Use of AI
 First draft have been generated using Google Gemini Pro 3.1 model with Extended Thinking.  
