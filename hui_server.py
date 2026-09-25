@@ -10,6 +10,17 @@ XTOUCH_PORT_NAME = 'X-TOUCH COMPACT'
 HUI_PORT_NAME = 'Python HUI'
 FADER_COUNT = 8
 HUI_FADER_CENTER_MSB = 64
+HUI_ZONE_SOLO = 0x0A
+HUI_ZONE_MUTE = 0x0B
+HUI_ZONE_RECORD_ARM = 0x0D
+HUI_ZONE_SELECT = 0x0F
+
+MCU_BUTTON_NOTES = {
+    'record_arm': tuple(range(0, 8)),
+    'solo': tuple(range(8, 16)),
+    'mute': tuple(range(16, 24)),
+    'select': tuple(range(24, 32)),
+}
 
 def main():
     print("--- Behringer X-Touch Compact HUI Server ---")
@@ -46,6 +57,20 @@ def main():
 
     # --- Routing Callbacks ---
 
+    def send_hui_button(zone, channel, is_pressed):
+        """Send a HUI channel-button state to Pro Tools."""
+        hui_virtual_out.send(mido.Message(
+            'control_change', channel=0, control=0x0C, value=zone))
+        hui_virtual_out.send(mido.Message(
+            'control_change', channel=0, control=0x2C,
+            value=channel | (0x40 if is_pressed else 0x00)))
+
+    def send_mcu_button(note, is_pressed):
+        """Update an X-Touch button LED using MCU note feedback."""
+        xtouch_out.send(mido.Message(
+            'note_on', channel=0, note=note,
+            velocity=127 if is_pressed else 0))
+
     def handle_xtouch_to_daw(msg):
         """Translates physical X-Touch movements (MCU) -> Pro Tools (HUI)"""
         
@@ -70,8 +95,26 @@ def main():
                 hui_virtual_out.send(mido.Message('control_change', channel=0, control=0x0F, value=fader_idx))
                 hui_virtual_out.send(mido.Message('control_change', channel=0, control=0x2F, value=0x40 if is_press else 0x00))
 
+            # Channel buttons: MCU button rows -> HUI channel zones.
+            else:
+                channel_button = next((
+                    (name, channel)
+                    for name, notes in MCU_BUTTON_NOTES.items()
+                    for channel, note in enumerate(notes)
+                    if note == msg.note
+                ), None)
+                if channel_button:
+                    button_name, channel = channel_button
+                    hui_zone = {
+                        'record_arm': HUI_ZONE_RECORD_ARM,
+                        'solo': HUI_ZONE_SOLO,
+                        'mute': HUI_ZONE_MUTE,
+                        'select': HUI_ZONE_SELECT,
+                    }[button_name]
+                    send_hui_button(hui_zone, channel, is_press)
+
             # Bank Left (46) / Bank Right (47)
-            elif msg.note == 46 and is_press:
+            if msg.note == 46 and is_press:
                 hui_virtual_out.send(mido.Message('control_change', channel=0, control=0x0C, value=0x0A))
                 hui_virtual_out.send(mido.Message('control_change', channel=0, control=0x2C, value=0x40))
                 hui_virtual_out.send(mido.Message('control_change', channel=0, control=0x0C, value=0x0A))
@@ -134,8 +177,24 @@ def main():
                     is_on = (msg.value & 0x40) > 0
                     mcu_note_map = {0: 91, 1: 92, 2: 93, 3: 94, 4: 95}
                     if port in mcu_note_map:
-                        vel = 127 if is_on else 0
-                        xtouch_out.send(mido.Message('note_on', channel=0, note=mcu_note_map[port], velocity=vel))
+                        send_mcu_button(mcu_note_map[port], is_on)
+                elif current_hui_zone in {
+                    HUI_ZONE_RECORD_ARM,
+                    HUI_ZONE_SOLO,
+                    HUI_ZONE_MUTE,
+                    HUI_ZONE_SELECT,
+                }:
+                    channel = msg.value & 0x0F
+                    if channel < FADER_COUNT:
+                        is_on = (msg.value & 0x40) > 0
+                        mcu_row = {
+                            HUI_ZONE_RECORD_ARM: 'record_arm',
+                            HUI_ZONE_SOLO: 'solo',
+                            HUI_ZONE_MUTE: 'mute',
+                            HUI_ZONE_SELECT: 'select',
+                        }[current_hui_zone]
+                        send_mcu_button(
+                            MCU_BUTTON_NOTES[mcu_row][channel], is_on)
 
     # Attach callbacks to ports
     xtouch_in.callback = handle_xtouch_to_daw
