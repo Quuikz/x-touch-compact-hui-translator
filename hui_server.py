@@ -7,14 +7,17 @@ mido.set_backend('mido.backends.rtmidi')
 
 # Name of your hardware device (Check Audio MIDI Setup if this differs)
 XTOUCH_PORT_NAME = 'X-TOUCH COMPACT'
+HUI_PORT_NAME = 'Python HUI'
+FADER_COUNT = 8
+HUI_FADER_CENTER_MSB = 64
 
 def main():
     print("--- Behringer X-Touch Compact HUI Server ---")
     
     # 1. Create Virtual Ports for Pro Tools (DAW)
     try:
-        hui_virtual_in = mido.open_input('Python HUI', virtual=True)
-        hui_virtual_out = mido.open_output('Python HUI', virtual=True)
+        hui_virtual_in = mido.open_input(HUI_PORT_NAME, virtual=True)
+        hui_virtual_out = mido.open_output(HUI_PORT_NAME, virtual=True)
         print("[+] Virtual HUI ports created for Pro Tools.")
     except Exception as e:
         print(f"[-] Error creating virtual ports. Is python-rtmidi installed? {e}")
@@ -29,6 +32,8 @@ def main():
 
     if not xt_in_name or not xt_out_name:
         print("[-] X-Touch Compact not found! Ensure it is connected and in MC Mode.")
+        hui_virtual_in.close()
+        hui_virtual_out.close()
         sys.exit(1)
 
     xtouch_in = mido.open_input(xt_in_name)
@@ -37,7 +42,7 @@ def main():
 
     # --- State Variables ---
     current_hui_zone = 0
-    fader_msb = [0] * 8
+    fader_msb = [HUI_FADER_CENTER_MSB] * FADER_COUNT
 
     # --- Routing Callbacks ---
 
@@ -105,7 +110,7 @@ def main():
 
         # 1. HUI Heartbeat Ping (CRITICAL: PT drops connection without this)
         if msg.type == 'note_on' and msg.note == 0 and msg.velocity == 0:
-            hui_virtual_in.send(mido.Message('note_on', channel=0, note=0, velocity=127))
+            hui_virtual_out.send(mido.Message('note_on', channel=0, note=0, velocity=127))
             return
 
         elif msg.type == 'control_change':
